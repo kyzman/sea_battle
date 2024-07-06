@@ -1,4 +1,18 @@
-from random import randint
+from random import randint, random
+
+field_size = 8  # размер поля
+ships = [4, 3, 3, 2, 2, 2, 1, 1, 1, 1]  # список с длинами кораблей для 8х8
+# ships = [4, 3, 2, 1]  # список с длинами кораблей для 6х6
+
+
+icons = {
+    'sea': '~',
+    'ship': '█',
+    'hit': 'Ꭓ',
+    'miss': '▪',
+}
+
+# ----------------------------------------------------------------------------------------------------------------------
 
 """Морской бой"""
 def greet():
@@ -16,15 +30,19 @@ class BoardException(Exception):
     Если мы хотим отловить несколько исключений, то их не нужно прописывать по отдельности"""
     pass
 
+
 class BoardOutException(BoardException):
-    """Если пользователь выстрелит за пределы доски, сработает это исключение. Пользовательский класс исключений"""
+    """Если пользователь выстрелит за пределы доски, сработает это исключение.
+     Пользовательский класс исключений"""
     def __str__(self):
-        return "Вы пытаетесь выстрелить за пределы доски!"
+        return "Выстрел за пределы поля!"
+
 
 class BoardUsedException(BoardException):
-    """Если пользователь выстрелит в уже задействованную клетку, сработает это исключение. Пользовательский класс исключений."""
+    """Если пользователь выстрелит в уже задействованную клетку, сработает это исключение.
+     Пользовательский класс исключений."""
     def __str__(self):
-        return "Вы уже стреляли в эту клетку!"
+        return "Вы сюда уже стреляли!"
 
 class BoardWrongShipException(BoardException):
     """Исключение для беспрепятственного размещения кораблей. Пользователю данное исключение не отображается."""
@@ -32,140 +50,151 @@ class BoardWrongShipException(BoardException):
 
 # ----------------------------------------------------------------------------------------------------------------------
 
-class Dot:
-    """Класс, содержащий все точки корабля на поле"""
+class Cell:
+    """Класс, содержащий все ячейки корабля на поле"""
     def __init__(self, x, y):
         self.x = x
         self.y = y
 
     def __eq__(self, other):
-        """Сравнение точек"""
+        """Сравнение ячеек"""
         return self.x == other.x and self.y == other.y
 
     def __repr__(self):
-        """Вывод точек в консоль"""
-        return f"Dot({self.x}, {self.y})"
+        """Вывод представления ячейки в консоль"""
+        return f"Cell({self.x}, {self.y})"
+
 
 # ----------------------------------------------------------------------------------------------------------------------
 class Ship:
     """Класс Корабль"""
-    def __init__(self, bow, l, o):
-        self.bow = bow # нос корабля
-        self.l = l # длина корабля
-        self.o = o # ориентация корабля (0 - вертикальный, 1 - горизонтальный)
-        self.lives = l # жизнь корабля измеряется его длинной
+    def __init__(self, bow: Cell, ship_size: int, horizont: bool):
+        self.bow = bow  # ячейка носа корабля
+        self.length = ship_size  # длина корабля
+        self.horizontal = horizont  # ориентация корабля (False - вертикальный, True - горизонтальный)
+        self.lives = ship_size  # жизнь корабля измеряется его длинной
 
-    @property # декоратор @property позволяет организовать класс так, чтобы скрыть внутреннюю структуру класса, оставив видимым только нужный API.
-    def dots(self):
-        ship_dots = [] # список с точками всего корабля
-        for i in range(self.l): # проходимся в цикле по значениям от 0 до (длинны корабля - 1)
-            cur_x = self.bow.x # текущая точка корабля
-            cur_y = self.bow.y # текущая точка корабля
+    @property
+    def cells(self):
+        ship_cells = []  # список с ячейками всего корабля
+        for i in range(self.length):  # проходимся в цикле по значениям от 0 до (длинны корабля - 1)
+            cur_x = self.bow.x  # текущая ячейка корабля
+            cur_y = self.bow.y  # текущая ячейка корабля
 
-            if self.o == 0: # шаг на одну клетку относительно ориентации корабля
-                cur_x += i
+            if self.horizontal:  # если горизонтальный
+                cur_y += i  # ... то направление размещения по y
+            else:
+                cur_x += i  # ... иначе по х
 
-            elif self.o == 1: # шаг на одну клетку относительно ориентации корабля
-                cur_y += i
+            ship_cells.append(Cell(cur_x, cur_y))  # добавляем значение в список
 
-            ship_dots.append(Dot(cur_x, cur_y)) # добавляем значение в список
+        return ship_cells
 
-        return ship_dots
-
-    def shooten(self, shot):
+    def hit(self, shot):
         """Проверка на попадание"""
-        return shot in self.dots
+        return shot in self.cells
 
-
-# s = Ship(Dot(1, 2), 4, 0) # передаём координаты корабля в экземпляре
 
 # ----------------------------------------------------------------------------------------------------------------------
 
 class Board:
     """Игровое поле"""
-    def __init__(self, hid=False, size=6):
-        self.hid = hid  # hid - нужно ли скрывать поле?
-        self.size = size # размер поля
+    def __init__(self, hide=False, size=6):
+        self.hide = hide  # hide - нужно ли скрывать поле?
+        self.size = size  # размер поля
 
-        self.count = 0 # количество поражённых кораблей
+        self.count = 0  # количество поражённых кораблей
 
-        self.field = [["0"] * size for _ in range(size)] # сетка, в которой храним состояние клеток
+        self.field = [[icons['sea']] * size for _ in range(size)]  # поле, в которой хранится состояние ячеек
 
-        self.busy = [] # занятые точки (либо кораблём, либо выстрелом)
-        self.ships = [] # список кораблей доски
+        self.busy = []  # занятые ячейки (либо кораблём, либо выстрелом)
+        self.ships = []  # список кораблей доски
 
     def __str__(self):
         """Вывод корабля на доску"""
-        res = ""
-        res += "  | 1 | 2 | 3 | 4 | 5 | 6 |"
-        for i, row in enumerate(self.field): # в цикле проходимся по строкам доски, берём индекс и...
-            res += f"\n{i + 1} | " + " | ".join(row) + " |" # ... выводим: номер строки | клетки строки
+        res = " "
+        for num in range(self.size):
+            res += f" | {num+1}"
+        for i, row in enumerate(self.field):  # в цикле проходимся по строкам доски, берём индекс и...
+            res += f"\n{i + 1} | " + " | ".join(row) + " |"  # ... выводим: номер строки | клетки строки
 
-        if self.hid:
-            res = res.replace("■", "0") # если True, заменяем все симолы корабля на пустые символы
+        if self.hide:
+            res = res.replace(icons['ship'], icons['sea'])  # если True, заменяем все символы корабля на символы моря
         return res
 
-    def out(self, d):
-        """Проверяем нахождение точки за пределами доски"""
-        return not ((0 <= d.x < self.size) and (0 <= d.y < self.size)) # условие нахождение точки в пределах доски - её нахождение в диапазоне от 0 до size
+    def get_num_field(self):
 
-    def contour(self, ship, verb=False): # verb указывает на необходимость ставить точки (.) вокруг кораблей
-        """Контур корабля"""
+        def to_int(data):
+            if data == icons['ship']:
+                return 1
+            else:
+                return 0
+
+        result = []
+        for row in self.field:
+            result.append(list(map(to_int, row)))
+        return result
+
+    def out(self, d):
+        """Проверка на расположение ячейки за пределы поля"""
+        return not ((0 <= d.x < self.size) and (0 <= d.y < self.size))
+
+    def ship_board(self, ship, show=False):
+        """Честный контур вокруг корабля"""
         near = [
             (-1, -1), (-1, 0), (-1, 1),
             (0, -1), (0, 0), (0, 1),
             (1, -1), (1, 0), (1, 1)
-        ] # все точки вокруг текущей (сдвиги по диагонали и вертикали)
-        for d in ship.dots: # берём каждую точку корабля...
-            for dx, dy in near: # ...проходимся в цикле по списку near...
-                cur = Dot(d.x + dx, d.y + dy) # ...сдвигаем исходную точку на dx и dy
-                # self.field[cur.x][cur.y] = "+" # вывод плюса для точек. Это поможет для определения клеток, на которые корабли ставить нельзя.
-                if not(self.out(cur)) and cur not in self.busy: # если точка не выходит за пределы доски и точка не занята...
-                    if verb: #
-                        self.field[cur.x][cur.y] = "." # ставим в ячейке символ точки (.)
-                    self.busy.append(cur) # добавляем точку в список занятых
+        ]  # все направления ячеек вокруг текущей (сдвиги по диагонали и вертикали)
+        for d in ship.cells:  # берём каждую ячейку корабля...
+            for dx, dy in near:  # ...проходимся в цикле по списку направлений...
+                cur = Cell(d.x + dx, d.y + dy)  # ...сдвигаем исходную ячейку на dx и dy
+                if not (self.out(cur)) and cur not in self.busy:  # если она не выходит за пределы доски и не занята...
+                    if show:  # если отображать
+                        self.field[cur.x][cur.y] = icons['miss']  # ... то ставим знак промаха в ячейку
+                    self.busy.append(cur)  # добавляем ячейку в список занятых
 
     def add_ship(self, ship):
-        for d in ship.dots: # проверка каждой точки корабля...
-            if self.out(d) or d in self.busy: # ... что она не выходит за границу и не занята.
-                raise BoardWrongShipException() # вызов исключения в случае успешной проверки условия
-        for d in ship.dots: # проверка каждой точки...
-            self.field[d.x][d.y] = "■" # ... поставим в каждой точке квадрат...
-            self.busy.append(d) # ... запишем точку в список занятых (точки расположения корабля или соседние)
+        for d in ship.cells:  # проверка каждой ячейки корабля...
+            if self.out(d) or d in self.busy:  # ... что она не выходит за границу и не занята.
+                raise BoardWrongShipException()  # вызов исключения в случае проблемы
+        for d in ship.cells:  # проверка каждой ячейки...
+            self.field[d.x][d.y] = icons['ship']  # ... поставим в каждой ячейке палубу корабля
+            self.busy.append(d)  # ... запишем ячейку в список занятых (ячейки расположения корабля или соседние)
 
-        self.ships.append(ship) # добавляем список собственных кораблей
-        self.contour(ship) # обводим список собственных кораблей по контуру
+        self.ships.append(ship)  # добавляем список собственных кораблей
+        self.ship_board(ship)  # обводим список собственных кораблей по контуру
 
     def shot(self, d):
         """Выстрел"""
-        if self.out(d): # выходит ли точка за границу?...
-            raise BoardOutException() # ... если да, вызываем исключение
+        if self.out(d):  # выходит ли ячейка за границу?...
+            raise BoardOutException()  # ... если да, вызываем исключение
 
-        if d in self.busy: # занята ли точка?...
-            raise BoardUsedException() # ... если да, вызываем исключение о занятости точки
+        if d in self.busy:  # занята ли ячейка?...
+            raise BoardUsedException()  # ... если да, вызываем исключение
 
-        self.busy.append(d) # точка занята (если не была занята)
+        self.busy.append(d)  # ячейка занята (если не была занята)
 
         for ship in self.ships:
-            """Проходимся в цикле по кораблям и проверяем, принадлежит ли точка какому-либо кораблю или нет"""
-            if ship.shooten(d): # если корабль был подстрелен...
-                ship.lives -= 1 # уменьшаем количество жизней корабля
-                self.field[d.x][d.y] = "X" # ставим в эту точку икс
-                if ship.lives == 0: # если у корабля кончились жизни, то...
-                    self.count += 1 # прибавляем к счётчику уничтоженных кораблей единицу
-                    self.contour(ship, verb=True) # обводим корабль, чтобы контур обозначился точками
+            """Проходимся в цикле по кораблям и проверяем, принадлежит ли ячейка какому-либо кораблю или нет"""
+            if ship.hit(d):  # если корабль был подстрелен...
+                ship.lives -= 1  # уменьшаем количество жизней корабля
+                self.field[d.x][d.y] = icons['hit']  # маркируем соответствующим образом ячейку
+                if ship.lives == 0:  # если у корабля кончились жизни, то...
+                    self.count += 1  # прибавляем к счётчику уничтоженных кораблей единицу
+                    self.ship_board(ship, show=True)  # обводим корабль, чтобы контур обозначился ячейками
                     print("Корабль уничтожен")
                     return False
                 else:
                     print("Корабль ранен!")
                     return True
 
-        self.field[d.x][d.y] = "." # если никакой корабль не поражён, срабатывает этот код
+        self.field[d.x][d.y] = icons['miss']  # если никакой корабль не поражён, срабатывает этот код
         print("Мимо!")
         return False
 
     def begin(self):
-        self.busy = [] # обнуление списка вначале игры (храним точки выстрела игрока).
+        self.busy = []  # обнуление списка использованных ячеек игры (тут будут сохраняться выстрелы игрока).
 
     def defeat(self):
         """Поражение"""
@@ -195,7 +224,7 @@ class Player:
 class AI(Player):
     """Класс игрок-компьютер"""
     def ask(self):
-        d = Dot(randint(0, 5), randint(0, 5)) # генерируем две случайные точки от 0 до 5
+        d = Cell(randint(0, 5), randint(0, 5)) # генерируем две случайные точки от 0 до 5
         print(f"Ход компьютера: {d.x+1} {d.y+1}")
         return d
 
@@ -216,31 +245,32 @@ class User(Player):
 
             x, y = int(x), int(y)
 
-            return Dot(x - 1, y - 1) # возвращаем нашу точку, не забыв вычесть единицу
+            return Cell(x - 1, y - 1) # возвращаем нашу точку, не забыв вычесть единицу
 
 class Game:
     """Игра"""
-    def __init__(self, size=6):
+    def __init__(self, ships_data, size=6):
+        self.ships_data = ships_data
         self.size = size
         pl = self.random_board() # генерируем случайную доску для игрока
         co = self.random_board() # генерируем случайную доску для компьютера
-        co.hid = True # скрываем доску компьютера
+        co.hide = True # скрываем доску компьютера
 
         self.ai = AI(co, pl) # создание игрока AI
         self.us = User(pl, co) # создание игрока User
+
     def try_board(self):
         """Пытаемся создать доску и расставить на неё каждый корабль"""
-        lens = [3, 2, 2, 1, 1, 1, 1] # длины кораблей
-        board = Board(size=self.size) # создание доски
-        attempts = 0 # количество попыток
-        for l in lens: # для каждой длины корабля будем пытаться его поставить
+        board = Board(size=self.size)  # создание доски
+        attempts = 0  # количество попыток
+        for ship_size in self.ships_data:  # для каждого размера корабля будем пытаться его поставить
             while True:
                 attempts += 1
-                if attempts > 2000:
+                if attempts > 888:
                     return None
-                ship = Ship(Dot(randint(0, self.size), randint(0, self.size)), l, randint(0, 1))
+                ship = Ship(Cell(randint(0, self.size), randint(0, self.size)), ship_size, random() >= 0.5)
                 try:
-                    board.add_ship(ship) # попытка добавить корабль
+                    board.add_ship(ship)  # попытка добавить корабль
                     break
                 except BoardWrongShipException:
                     pass
@@ -289,5 +319,5 @@ class Game:
         greet()
         self.loop()
 
-g = Game()
+g = Game(ships_data=ships, size=field_size)
 g.start()
