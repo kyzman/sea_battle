@@ -1,8 +1,8 @@
 from random import randint, random, choice
 
-field_size = 8  # размер поля
-ships = [4, 3, 3, 2, 2, 2, 1, 1, 1, 1]  # список с длинами кораблей для 8х8
-# ships = [4, 3, 2, 1]  # список с длинами кораблей для 6х6
+field_size = 6  # размер поля
+# ships = [4, 3, 3, 2, 2, 2, 1, 1, 1, 1]  # список с длинами кораблей для 8х8
+ships = [4, 3, 2, 1]  # список с длинами кораблей для 6х6
 
 
 icons = {
@@ -11,7 +11,6 @@ icons = {
     'hit': 'Ꭓ',
     'miss': '▪',
 }
-
 
 
 # ----------------------------------------------------------------------------------------------------------------------
@@ -263,6 +262,8 @@ class Player:
             try:
                 target = self.ask()  # просим компьютера или пользователя дать координаты выстрела
                 repeat = self.enemy.shot(target)  # выполняем выстрел
+                if self.enemy.prev_hit.get_result() == 'hit' and not repeat:  # если промах после поражения, то
+                    self.enemy.prev_hit = self.enemy.first_hit  # считаем предыдущим правильным выстрелом первый.
                 return repeat  # если выстрел успешен, возвращаем запрос на повторение хода
             except BoardException as e:  # если выстрел не удался, печатаем исключение
                 print(e)
@@ -280,17 +281,6 @@ class AI(Player):
                 d = choice(ds)
         print(f"Ход компьютера: {d.x + 1} {d.y + 1}")
         return d
-
-    def move(self):
-        while True:
-            try:
-                target = self.ask()  # просим компьютера или пользователя дать координаты выстрела
-                repeat = self.enemy.shot(target)  # выполняем выстрел
-                if self.enemy.prev_hit.get_result() == 'hit' and not repeat:
-                    self.enemy.prev_hit = self.enemy.first_hit
-                return repeat  # если выстрел успешен, возвращаем запрос на повторение хода
-            except BoardException as e:  # если выстрел не удался, печатаем исключение
-                print(e)
 
 
 class User(Player):
