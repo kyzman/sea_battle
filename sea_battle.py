@@ -1,4 +1,4 @@
-from random import randint, random
+from random import randint, random, choice
 
 field_size = 8  # размер поля
 ships = [4, 3, 3, 2, 2, 2, 1, 1, 1, 1]  # список с длинами кораблей для 8х8
@@ -12,6 +12,8 @@ icons = {
     'miss': '▪',
 }
 
+
+
 # ----------------------------------------------------------------------------------------------------------------------
 
 class BoardException(Exception):
@@ -23,6 +25,7 @@ class BoardException(Exception):
 class BoardOutException(BoardException):
     """Если пользователь выстрелит за пределы доски, сработает это исключение.
      Пользовательский класс исключений"""
+
     def __str__(self):
         return "Выстрел за пределы поля!"
 
@@ -30,17 +33,21 @@ class BoardOutException(BoardException):
 class BoardUsedException(BoardException):
     """Если пользователь выстрелит в уже задействованную клетку, сработает это исключение.
      Пользовательский класс исключений."""
+
     def __str__(self):
         return "Вы сюда уже стреляли!"
+
 
 class BoardWrongShipException(BoardException):
     """Исключение для беспрепятственного размещения кораблей. Пользователю данное исключение не отображается."""
     pass
 
+
 # ----------------------------------------------------------------------------------------------------------------------
 
 class Cell:
     """Класс, содержащий все ячейки корабля на поле"""
+
     def __init__(self, x, y):
         self.x = x
         self.y = y
@@ -49,14 +56,37 @@ class Cell:
         """Сравнение ячеек"""
         return self.x == other.x and self.y == other.y
 
+    def __sub__(self, other):
+        """Разница ячеек"""
+        return Cell(self.x - other.x, self.y - other.y)
+
+    def __add__(self, other):
+        """Сумма ячеек"""
+        return Cell(self.x + other.x, self.y + other.y)
+
     def __repr__(self):
         """Вывод представления ячейки в консоль"""
         return f"Cell({self.x}, {self.y})"
 
 
 # ----------------------------------------------------------------------------------------------------------------------
+class Shot:
+    """Класс выстрела. Содержит координаты выстрела и его результат"""
+    def __init__(self, d: Cell, result: str):
+        self.coordinates = d
+        self.result = result
+
+    def get_result(self) -> str:
+        return self.result
+
+    def get_coords(self) -> Cell:
+        return self.coordinates
+
+
+# ----------------------------------------------------------------------------------------------------------------------
 class Ship:
     """Класс Корабль"""
+
     def __init__(self, bow: Cell, ship_size: int, horizont: bool):
         self.bow = bow  # ячейка носа корабля
         self.length = ship_size  # длина корабля
@@ -88,6 +118,7 @@ class Ship:
 
 class Board:
     """Игровое поле"""
+
     def __init__(self, hide=False, size=6):
         self.hide = hide  # hide - нужно ли скрывать поле?
         self.size = size  # размер поля
@@ -98,12 +129,14 @@ class Board:
 
         self.busy = []  # занятые ячейки (либо кораблём, либо выстрелом)
         self.ships = []  # список кораблей доски
+        self.prev_hit = Shot(Cell(-1, -1), 'out')  # последнее успешное поражение корабля.
+        self.first_hit = Shot(Cell(-1, -1), 'out')  # первое успешное поражение корабля в серии.
 
     def __str__(self):
         """Вывод корабля на доску"""
         res = " "
         for num in range(self.size):
-            res += f" | {num+1}"
+            res += f" | {num + 1}"
         for i, row in enumerate(self.field):  # в цикле проходимся по строкам доски, берём индекс и...
             res += f"\n{i + 1} | " + " | ".join(row) + " |"  # ... выводим: номер строки | клетки строки
 
@@ -172,9 +205,13 @@ class Board:
                 if ship.lives == 0:  # если у корабля кончились жизни, то...
                     self.count += 1  # прибавляем к счётчику уничтоженных кораблей единицу
                     self.ship_board(ship, show=True)  # обводим корабль, чтобы контур обозначился ячейками
+                    self.prev_hit = Shot(d, 'dead')
                     print("Корабль уничтожен")
                     return False
                 else:
+                    if self.prev_hit.result != 'hit':
+                        self.first_hit = Shot(d, 'hit')
+                    self.prev_hit = Shot(d, 'hit')
                     print("Корабль ранен!")
                     return True
 
@@ -189,55 +226,96 @@ class Board:
         """Поражение"""
         return self.count == len(self.ships)
 
+    def get_cell(self, d):
+        """Выдаёт значение ячейки по координатам"""
+        return self.field[d.x][d.y]
+
+    def get_free_cross(self, d) -> list[Cell]:
+        """Получение списка возможных ячеек для следующего выстрела по переданным координатам"""
+        near = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+        result = []
+        for dx, dy in near:
+            cur = Cell(d.x + dx, d.y + dy)
+            if not self.out(cur) and cur in self.busy and self.get_cell(cur) == icons['hit']:
+                cell = d + (d - cur)
+                if not self.out(cell) and cell not in self.busy:
+                    return [cell,]
+
+            if not (self.out(cur)) and cur not in self.busy:
+                result.append(cur)
+        return result
+
+
 # ----------------------------------------------------------------------------------------------------------------------
 class Player:
     """Игрок"""
-    def __init__(self, board, enemy):
-        self.board = board
-        self.enemy = enemy
+
+    def __init__(self, board: Board, enemy: Board):
+        self.board = board  # поле игрока
+        self.enemy = enemy  # поле противника
 
     def ask(self):
-        raise NotImplementedError() # при попытке вызвать метод будет вызываться исключение (метод должен быть у потомков класса)
+        raise NotImplementedError()  # при попытке вызвать метод будет вызываться исключение (метод должен быть у потомков класса)
 
     def move(self):
         """В бесконечном цикле пытаемся сделать выстрел"""
         while True:
             try:
-                target = self.ask() # просим компьютера или пользователя дать координаты выстрела
-                repeat = self.enemy.shot(target) # выполняем выстрел
-                return repeat # если выстрел успешен, возвращаем запрос на повторение хода
-            except BoardException as e: # если выстрел не удался, печатаем исключение
+                target = self.ask()  # просим компьютера или пользователя дать координаты выстрела
+                repeat = self.enemy.shot(target)  # выполняем выстрел
+                return repeat  # если выстрел успешен, возвращаем запрос на повторение хода
+            except BoardException as e:  # если выстрел не удался, печатаем исключение
                 print(e)
+
 
 # ----------------------------------------------------------------------------------------------------------------------
 class AI(Player):
     """Класс игрок-компьютер"""
+
     def ask(self):
-        d = Cell(randint(0, 5), randint(0, 5)) # генерируем две случайные точки от 0 до 5
-        print(f"Ход компьютера: {d.x+1} {d.y+1}")
+        d = Cell(randint(0, field_size-1), randint(0, field_size-1))  # генерируем две случайные точки от 0 до размера карты
+        if self.enemy.prev_hit.get_result() == 'hit':
+            ds = self.enemy.get_free_cross(self.enemy.prev_hit.get_coords())
+            if ds:
+                d = choice(ds)
+        print(f"Ход компьютера: {d.x + 1} {d.y + 1}")
         return d
+
+    def move(self):
+        while True:
+            try:
+                target = self.ask()  # просим компьютера или пользователя дать координаты выстрела
+                repeat = self.enemy.shot(target)  # выполняем выстрел
+                if self.enemy.prev_hit.get_result() == 'hit' and not repeat:
+                    self.enemy.prev_hit = self.enemy.first_hit
+                return repeat  # если выстрел успешен, возвращаем запрос на повторение хода
+            except BoardException as e:  # если выстрел не удался, печатаем исключение
+                print(e)
+
 
 class User(Player):
     def ask(self):
         while True:
-            cords = input("Ваш ход: ").split() # запрос координат
+            cords = input("Ваш ход: ").split()  # запрос координат
 
-            if len(cords) != 2: # проверка, что введены две координаты
+            if len(cords) != 2:  # проверка, что введены две координаты
                 print("Введите 2 координаты! ")
                 continue
 
             x, y = cords
 
-            if not (x.isdigit()) or not (y.isdigit()): # проверяем, что введённое значение - число
+            if not (x.isdigit()) or not (y.isdigit()):  # проверяем, что введённое значение - число
                 print(" Введите числа! ")
                 continue
 
             x, y = int(x), int(y)
 
-            return Cell(x - 1, y - 1) # возвращаем нашу точку, не забыв вычесть единицу
+            return Cell(x - 1, y - 1)  # возвращаем нашу точку, не забыв вычесть единицу
 
 
 """Морской бой"""
+
+
 def greet():
     print(f"""{'~' * 20}
 Добро пожаловать
@@ -248,17 +326,19 @@ def greet():
 x - номер строки
 y - номер столбца""")
 
+
 class Game:
     """Игра"""
+
     def __init__(self, ships_data, size=6):
         self.ships_data = ships_data
         self.size = size
-        pl = self.random_board() # генерируем случайную доску для игрока
-        co = self.random_board() # генерируем случайную доску для компьютера
-        co.hide = True # скрываем доску компьютера
+        pl = self.random_board()  # генерируем случайную доску для игрока
+        co = self.random_board()  # генерируем случайную доску для компьютера
+        co.hide = True  # скрываем доску компьютера
 
-        self.ai = AI(co, pl) # создание игрока AI
-        self.us = User(pl, co) # создание игрока User
+        self.ai = AI(co, pl)  # создание игрока AI
+        self.us = User(pl, co)  # создание игрока User
 
     def try_board(self):
         """Пытаемся создать доску и расставить на неё каждый корабль"""
@@ -281,14 +361,14 @@ class Game:
 
     def random_board(self):
         """Генерация случайной доски"""
-        board = None # пуская доска
-        while board is None: # создание доски в бесконечном цикле при условии, что доска пустая
+        board = None  # пуская доска
+        while board is None:  # создание доски в бесконечном цикле при условии, что доска пустая
             board = self.try_board()
-        return board # возвращаем непустую доску
+        return board  # возвращаем непустую доску
 
     def loop(self):
         """Создаём игровой цикл"""
-        num = 0 # номер хода
+        num = 0  # номер хода
         while True:
             print(f"""{'~' * 20}
 Доска пользователя: 
@@ -297,16 +377,16 @@ class Game:
 Доска компьютера:
 {self.ai.board}
 {'~' * 20}""")
-            if num % 2 == 0: # если номер хода чётный, ходит пользователь
+            if num % 2 == 0:  # если номер хода чётный, ходит пользователь
                 print("Ходит пользователь!")
-                repeat = self.us.move() # записываем результат
-            else: # если номер хода нечётный, ходит компьютер
+                repeat = self.us.move()  # записываем результат
+            else:  # если номер хода нечётный, ходит компьютер
                 print("Ходит компьютер!")
                 repeat = self.ai.move()
-            if repeat: # ход остаётся у того же игрока, если попал
+            if repeat:  # ход остаётся у того же игрока, если попал
                 num -= 1
 
-            if self.ai.board.defeat(): # проверка на количество поражённых кораблей, равных количеству кораблей на доске
+            if self.ai.board.defeat():  # проверка на количество поражённых кораблей, равных количеству кораблей на доске
                 print("~" * 20)
                 print("Пользователь выиграл!")
                 break
@@ -316,9 +396,11 @@ class Game:
                 print("Компьютер выиграл!")
                 break
             num += 1
+
     def start(self):
         greet()
         self.loop()
+
 
 g = Game(ships_data=ships, size=field_size)
 g.start()
